@@ -10,12 +10,14 @@ import static org.wildfly.plugin.core.Constants.STANDALONE_XML;
 import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import javax.xml.stream.XMLStreamException;
 
@@ -223,6 +225,12 @@ abstract class AbstractProvisionServerMojo extends AbstractMojo {
     @Parameter(alias = "dry-run")
     boolean dryRun;
 
+    @Parameter(alias = "keyserver-urls")
+    protected List<URL> keyserverUrls = Collections.emptyList();
+
+    @Parameter(alias = "trusted-keyring")
+    protected File trustedKeyring;
+
     private Path wildflyDir;
 
     protected MavenRepoManager artifactResolver;
@@ -251,6 +259,8 @@ abstract class AbstractProvisionServerMojo extends AbstractMojo {
             try {
                 artifactResolver = new ChannelMavenArtifactRepositoryManager(channels,
                         repoSystem, repoSession, repositories,
+                        keyserverUrls.stream().map(URL::toExternalForm).collect(Collectors.toList()),
+                        trustedKeyring == null ? null : trustedKeyring.toPath(),
                         getLog(), offlineProvisioning);
             } catch (MalformedURLException | UnresolvedMavenArtifactException ex) {
                 throw new MojoExecutionException(ex.getLocalizedMessage(), ex);

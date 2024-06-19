@@ -23,6 +23,7 @@ import java.util.regex.Pattern;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
+import org.bouncycastle.openpgp.PGPPublicKey;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
@@ -41,6 +42,8 @@ import org.wildfly.channel.NoStreamFoundException;
 import org.wildfly.channel.Repository;
 import org.wildfly.channel.UnresolvedMavenArtifactException;
 import org.wildfly.channel.VersionResult;
+import org.wildfly.channel.gpg.GpgSignatureValidator;
+import org.wildfly.channel.gpg.Keyserver;
 import org.wildfly.channel.maven.VersionResolverFactory;
 import org.wildfly.channel.spi.ChannelResolvable;
 import org.wildfly.prospero.metadata.ManifestVersionRecord;
@@ -60,7 +63,10 @@ public class ChannelMavenArtifactRepositoryManager implements MavenRepoManager, 
     public ChannelMavenArtifactRepositoryManager(List<ChannelConfiguration> channels,
             RepositorySystem system,
             RepositorySystemSession contextSession,
-            List<RemoteRepository> repositories, Log log, boolean offline)
+            List<RemoteRepository> repositories,
+            List<String> keystoreUrls,
+            Path gpgKeyring,
+            Log log, boolean offline)
             throws MalformedURLException, UnresolvedMavenArtifactException, MojoExecutionException {
         if (channels.isEmpty()) {
             throw new MojoExecutionException("No channel specified.");
@@ -84,7 +90,18 @@ public class ChannelMavenArtifactRepositoryManager implements MavenRepoManager, 
             return rep;
         };
         VersionResolverFactory factory = new VersionResolverFactory(system, session, mapper);
-        channelSession = new ChannelSession(this.channels, factory);
+        final GpgSignatureValidator signatureValidator = new GpgSignatureValidator(new GpgKeyring(gpgKeyring),
+                new Keyserver(keystoreUrls));
+        signatureValidator.addListener(new GpgSignatureValidator.SignatureValidatorListener() {
+            @Override
+            public void artifactSignatureCorrect(org.wildfly.channel.MavenArtifact artifact, PGPPublicKey publicKey) {
+                log.info(String.format("Artifact %s:%s:%s is signed by %s",
+                        artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion(),
+                        GpgKeyring.describeImportedKeys(publicKey)));
+            }
+        });
+        channelSession = new ChannelSession(this.channels, factory,
+                signatureValidator);
         localCachePath = contextSession.getLocalRepositoryManager().getRepository().getBasedir().toPath();
         this.system = system;
     }
